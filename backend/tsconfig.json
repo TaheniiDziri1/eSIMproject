@@ -1,0 +1,17 @@
+{
+"compilerOptions": {
+    "target": "ES2020",               // Version JS générée
+    "module": "commonjs",             // Module system (Node.js)
+    "rootDir": "./src",               // Dossier source TS
+    "outDir": "./dist",               // Dossier compilé JS
+    "strict": true,                   // Active vérifications strictes
+    "esModuleInterop": true,          // Permet import de modules CommonJS
+    "forceConsistentCasingInFileNames": true, 
+    "skipLibCheck": true,             // Ignore vérification types bibliothèques
+    "resolveJsonModule": true,        // Permet d’importer des fichiers JSON
+    "moduleResolution": "node",       // Résolution modules comme Node
+    "noImplicitAny": true             // Interdit type 'any' implicite
+},
+  "include": ["src"],                 // Inclut tout le code TS du dossier src
+  "exclude": ["node_modules", "dist"] // Exclut node_modules et dist
+}
