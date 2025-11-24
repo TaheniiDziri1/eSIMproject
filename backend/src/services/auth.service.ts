@@ -24,12 +24,35 @@ class AuthService {
         const isMatch = await bcrypt.compare(password,user.password);
         if(!isMatch) throw new Error("Mot de passe incorrect");
 
+        //Generer token de 7j
         const token = jwt.sign(
-            {id:user._id, email:user.email},
+            {id:user._id,email:user.email},
             process.env.JWT_SECRET || "secret",
             {expiresIn:"7d"}
-            );
-            return {user,token};
+        );
+
+        user.token = token;
+        await user.save();
+        const { password: _, token: __, ...userData} =user.toObject();
+        return {user:userData,token};
+    }
+
+    async refreshToken(oldToken:string){
+        const user = await User.findOne({token:oldToken});
+        if(!user) throw new Error("Token invalide");
+
+        //Generer un nouveau token
+
+        const newToken = jwt.sign(
+            {id: user._id ,email:user.email},
+            process.env.JWT_SECRET || "secret",
+            {expiresIn:"7d"}
+        );
+
+        user.token =newToken;
+        await user.save();
+        return{token:newToken};
+
     }
 }
 

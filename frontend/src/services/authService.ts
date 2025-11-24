@@ -15,6 +15,7 @@ export interface AuthResponse {
         body: JSON.stringify({ username, email, password }),
     });
     return res.json();
+    
     }
 
     export async function signin(email: string, password: string): Promise<AuthResponse> {
