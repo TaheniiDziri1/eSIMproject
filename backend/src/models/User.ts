@@ -5,7 +5,7 @@ username: string;
 email: string;
 password: string;
 balance: number;
-token?:string;
+
 }
 
 const UserSchema: Schema = new Schema(
@@ -14,7 +14,7 @@ const UserSchema: Schema = new Schema(
     email: { type: String, required: true, unique: true, lowercase: true },
     password: { type: String, required: true },
     balance: { type: Number, default: 0 }, 
-    token:{type:String,default:null},
+    
 },
 { timestamps: true }
 );
