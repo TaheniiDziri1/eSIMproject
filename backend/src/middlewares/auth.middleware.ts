@@ -15,8 +15,6 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     try {
         const secret = process.env.JWT_SECRET || "secret";
         const decoded: any = jwt.verify(token, secret);
-
-        // Vérifier si le token correspond à celui stocké en BD
         const tokenRecord = await Token.findOne({ userId: decoded.id });
 
         if (!tokenRecord || tokenRecord.token !== token) {
