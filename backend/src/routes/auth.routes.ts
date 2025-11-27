@@ -1,6 +1,5 @@
 import express from "express";
 import {signup,signin} from "../controllers/auth.controller";
-import { authMiddleware } from "../middlewares/auth.middleware";
 import{requestPasswordReset,resetPassword} from "../controllers/auth.controller";
 const router =express.Router();
 

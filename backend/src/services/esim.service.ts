@@ -1,8 +1,9 @@
-import axios from "axios";
 import Esim from "../models/esims";
 import Order, { IOrder } from "../models/orders";
 import mongoose from "mongoose";
 import walletService from "./wallet.service";
+import AppError from "../utils/AppError";
+import esimAccessService from "./external/esimAccess.service";
 
 export interface OrderEsimResponse {
   success: boolean;
@@ -17,22 +18,12 @@ export interface OrderEsimResponse {
 
 class EsimService {
   async getAvailablePackages() {
-    const response = await axios.post(
-      "https://api.esimaccess.com/api/v1/open/package/list",
-      {},
-      {
-        headers: {
-          "RT-AccessCode": process.env.ESIM_ACCESS_CODE,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    return response.data;
+    return await esimAccessService.getAvailablePackages();
   }
 
   async orderEsim(userId: string, packageCode: string, price: number): Promise<OrderEsimResponse> {
     price = Number(price);
-    if (isNaN(price)) throw new Error("Prix invalide");
+    if (isNaN(price)) throw new AppError("Prix invalide", 400);
 
     const balance = await walletService.checkBalance(userId);
     if (balance < price) {
@@ -57,55 +48,53 @@ class EsimService {
 
   async finalizeOrder(orderId: string): Promise<OrderEsimResponse> {
     const order = await Order.findById(orderId);
-    if (!order) throw new Error("Commande introuvable");
-    if (order.status !== "pending") throw new Error("Commande déjà finalisée");
+    if (!order) throw new AppError("Commande introuvable", 404);
+    if (order.status !== "pending") throw new AppError("Commande déjà finalisée", 400);
 
-    // Créer orderNo via eSIM Access
-    const response = await axios.post(
-      "https://api.esimaccess.com/api/v1/open/esim/order",
-      {
-        transactionId: order.transactionId,
-        amount: order.price,
-        packageInfoList: [{ packageCode: order.packageCode, count: 1, price: order.price }],
-      },
-      {
-        headers: { "RT-AccessCode": process.env.ESIM_ACCESS_CODE, "Content-Type": "application/json" },
+    try {
+      // 1. Créer orderNo via API externe
+      const resOrder = await esimAccessService.createOrder(order.transactionId, order.price, order.packageCode);
+
+      if (!resOrder.success) {
+        await walletService.addBalance(order.user.toString(), order.price);
+        order.status = "failed";
+        await order.save();
+        return { success: false, message: resOrder.errorMessage, order };
       }
-    );
 
-    if (!response.data.success) {
+      const orderNo = resOrder.obj.orderNo;
+      if (!orderNo) throw new AppError("orderNo manquant dans la réponse API", 500);
+
+      order.orderNo = orderNo;
+      await order.save();
+
+      // 2. Query le profil eSIM
+      const resQuery = await esimAccessService.queryOrder(orderNo);
+
+      const profile = resQuery?.obj?.profileList?.[0];
+      if (!profile) throw new AppError("Profil eSIM non trouvé", 500);
+
+      // 3. Créer eSIM dans la base
+      const esim = await Esim.create({
+        user: order.user,
+        iccid: profile.iccid,
+        qrCodeUrl: profile.qrCodeUrl,
+        packageCode: order.packageCode,
+        status: "active",
+      });
+
+      order.esim = esim._id;
+      order.status = "completed";
+      await order.save();
+
+      return { success: true, message: "Commande finalisée et eSIM activée", order, esim };
+    } catch (err: any) {
+      // rollback
       await walletService.addBalance(order.user.toString(), order.price);
       order.status = "failed";
       await order.save();
-      return { success: false, message: response.data.errorMessage, order };
+      throw new AppError(err.message || "Erreur lors de la finalisation de la commande", 500);
     }
-
-    const orderNo = response.data.obj.orderNo;
-    order.orderNo = orderNo;
-    await order.save();
-
-    const queryResponse = await axios.post(
-      "https://api.esimaccess.com/api/v1/open/esim/query",
-      { orderNo },
-      {
-        headers: { "RT-AccessCode": process.env.ESIM_ACCESS_CODE, "Content-Type": "application/json" },
-      }
-    );
-
-    const profile = queryResponse.data.obj.profileList[0];
-    const esim = await Esim.create({
-      user: order.user,
-      iccid: profile.iccid,
-      qrCodeUrl: profile.qrCodeUrl,
-      packageCode: order.packageCode,
-      status: "active",
-    });
-
-    order.esim = esim._id;
-    order.status = "completed";
-    await order.save();
-
-    return { success: true, message: "Commande finalisée et eSIM activée", order, esim };
   }
 }
 

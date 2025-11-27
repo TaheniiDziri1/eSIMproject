@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import dayjs from "dayjs";
+import AppError from "./AppError";
 import { Types } from "mongoose";
 
 export function generateTokens(
@@ -7,7 +8,7 @@ export function generateTokens(
     email?: string
 ) {
     if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
-        throw new Error("JWT secrets missing in environment variables");
+        throw new AppError("JWT secrets missing in environment variables",500);
     }
 
     const token = jwt.sign(

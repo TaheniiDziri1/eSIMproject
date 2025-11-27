@@ -8,6 +8,10 @@ import AppError from "../utils/AppError";
 import crypto from "crypto";
 import dayjs from "dayjs";
 
+const hashToken = (token:string) =>{
+    return crypto.createHash("sha256").update(token).digest("hex");
+}
+
 class AuthService {
     async signup(username: string, email: string, password: string) {
         if (!username || username.trim() === "") 
@@ -37,13 +41,27 @@ class AuthService {
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
+
         const user = await User.create({
             username,
             email,
             password: hashedPassword,
+            isActive:false,
         });
 
-        return user;
+        const activationToken = crypto.randomBytes(32).toString("hex");
+        const activationTokenHashed = hashToken(activationToken);
+        const expires = new Date();
+        expires.setHours(expires.getHours() + 24); 
+        
+        await Token.create({
+            userId: user._id,
+            token: activationTokenHashed,
+            tokenExpiresAt: expires,
+        });
+
+
+        return {user,activationToken};
     }
 
     async signin(email: string, password: string) {
@@ -68,7 +86,7 @@ class AuthService {
             { userId: user._id },
             {
                 token,
-                refreshToken,
+                refreshToken:hashToken(refreshToken),
                 tokenIssuedAt,
                 tokenExpiresAt,
                 refreshIssuedAt,
@@ -87,7 +105,8 @@ class AuthService {
     }
 
     async refreshToken(oldRefresh: string) {
-        const savedToken = await Token.findOne({ refreshToken: oldRefresh });
+        const hashed =hashToken(oldRefresh);
+        const savedToken = await Token.findOne({ refreshToken: hashed });
         if (!savedToken) 
             throw new AppError("Refresh token invalide", 401);
 
@@ -108,7 +127,7 @@ class AuthService {
         } = generateTokens(decoded.id);
 
         savedToken.token = token;
-        savedToken.refreshToken = refreshToken;
+        savedToken.refreshToken = hashToken(refreshToken);
         savedToken.tokenIssuedAt = tokenIssuedAt;
         savedToken.tokenExpiresAt = tokenExpiresAt;
         savedToken.refreshIssuedAt = refreshIssuedAt;
@@ -118,9 +137,11 @@ class AuthService {
 
         return { token, refreshToken };
     }
+
+
     async requestPasswordReset(email:string){
         const user = await User.findOne({email});
-        if(!user) throw new Error("utilisateur non trouvé");
+        if(!user) throw new AppError("Utilisateur introuvable",404);
         //Génerer un token de réiniialisation 
 
         const resetToken =crypto.randomBytes(32).toString("hex");
@@ -135,14 +156,14 @@ class AuthService {
     };
     async resetPassword(resetToken:string, newPassword:string){
         const tokenData = await Token.findOne({resetToken});
-        if(!tokenData) throw new Error ("token invalide ou expiré");
+        if(!tokenData) throw new AppError ("token invalide ou expiré",400);
 
         if(!tokenData.resetTokenExpires ||tokenData.resetTokenExpires < new Date()){
-            throw new Error("le token de réinitialisation a expiré");
+            throw new AppError("Token de réinitialisation expiré",400);
         }
 
         const user = await User.findById(tokenData.userId);
-        if(!user) throw new Error("utilisateur introuvable");
+        if(!user) throw new AppError("Utilisateur introuvable",404);
         const isStrong = validator.isStrongPassword(newPassword,{
                         minLength: 8,
             minLowercase: 1,
@@ -151,14 +172,14 @@ class AuthService {
             minSymbols: 1,
 
         })
-        if(!isStrong) throw new Error ("Mot de passe trop faible : il doit contenir au moins 8 caractères, une majuscule, une minuscule, un chiffre et un symbole");
+        if(!isStrong) throw new AppError ("Mot de passe trop faible : il doit contenir au moins 8 caractères, une majuscule, une minuscule, un chiffre et un symbole",400);
         const hashedNewPassword = await bcrypt.hash(newPassword,10);
 
         user.password =hashedNewPassword;
         await user.save();
 
-        tokenData.resetToken =undefined;
-        tokenData.resetTokenExpires = undefined;
+        tokenData.resetToken =null;
+        tokenData.resetTokenExpires = null;
         await tokenData.save();
         return {
         message: "Mot de passe réinitialisé avec succès",

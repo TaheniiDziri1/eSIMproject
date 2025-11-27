@@ -40,6 +40,14 @@ const TokenSchema = new mongoose.Schema({
         default: null,
         required:false,
     },
+    activationToken:{
+        type:String,
+        default:null},
+
+    activationExpires:{
+        type:Date,
+        default:null
+        },
 
 }, { timestamps: true });
 
